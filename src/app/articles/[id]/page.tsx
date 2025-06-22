@@ -19,8 +19,9 @@ async function getArticle(id: string): Promise<IArticle | null> {
   }
 }
 
-export async function generateMetadata({ params }: { params: { id: string } }) {
-  const article = await getArticle(params.id);
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const article = await getArticle(id);
   
   if (!article) {
     return {
@@ -34,8 +35,9 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
   };
 }
 
-export default async function ArticlePage({ params }: { params: { id: string } }) {
-  const article = await getArticle(params.id);
+export default async function ArticlePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const article = await getArticle(id);
 
   if (!article) {
     notFound();
