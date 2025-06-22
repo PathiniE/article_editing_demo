@@ -14,7 +14,7 @@ async function getArticle(id: string): Promise<IArticle | null> {
       return null;
     }
     return JSON.parse(JSON.stringify(article));
-  } catch (error) {
+  } catch {
     return null;
   }
 }
