@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, readdir } from 'fs/promises';
 import path from 'path';
 
 export async function POST(request: NextRequest) {
@@ -44,9 +44,9 @@ export async function POST(request: NextRequest) {
     const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
     try {
       await mkdir(uploadsDir, { recursive: true });
-    } catch (error) {
+    } catch (mkdirError) {
       // Directory might already exist, which is fine
-      console.log('Directory creation note:', error);
+      console.log('Directory creation note:', mkdirError);
     }
 
     // Write file to uploads directory
@@ -76,10 +76,9 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-    const fs = require('fs').promises;
     
     try {
-      const files = await fs.readdir(uploadsDir);
+      const files = await readdir(uploadsDir);
       const fileList = files.map((file: string) => ({
         name: file,
         url: `/uploads/${file}`
@@ -89,7 +88,7 @@ export async function GET() {
         success: true,
         files: fileList
       });
-    } catch (error) {
+    } catch {
       // Directory doesn't exist or is empty
       return NextResponse.json({
         success: true,
