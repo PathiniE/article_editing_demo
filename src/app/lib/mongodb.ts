@@ -7,7 +7,6 @@ if (!MONGODB_URI) {
 }
 
 console.log('MongoDB URI exists:', !!MONGODB_URI);
-console.log('MongoDB URI preview:', MONGODB_URI.substring(0, 20) + '...');
 
 let cached = (global as any).mongoose;
 
@@ -24,12 +23,19 @@ async function dbConnect() {
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
     };
 
     console.log('Creating new MongoDB connection...');
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
       console.log('MongoDB connected successfully');
       return mongoose;
+    }).catch((error) => {
+      console.error('MongoDB connection failed:', error);
+      cached.promise = null;
+      throw error;
     });
   }
 

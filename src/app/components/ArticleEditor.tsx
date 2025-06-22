@@ -22,6 +22,16 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       return;
     }
 
+    console.log('Editor content before save:', content); // Debug log
+    console.log('Title before save:', title); // Debug log
+    
+    // Check if content is empty or just contains empty HTML tags
+    const contentText = content.replace(/<[^>]*>/g, '').trim();
+    if (!contentText) {
+      alert('Please enter some content');
+      return;
+    }
+
     setIsSaving(true);
     try {
       await onSave({ title: title.trim(), content });
@@ -44,7 +54,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
       <div className="mb-6">
         <Editor
-          apiKey="no-api-key"
+          apiKey="7j15ctc84od36f3vb4pypwtc4prqvid1toi4edg1x3xsu8xj"
           onInit={(evt, editor) => editorRef.current = editor}
           initialValue={content}
           init={{

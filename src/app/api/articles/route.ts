@@ -8,6 +8,7 @@ export async function GET() {
     const articles = await Article.find({}).sort({ updatedAt: -1 });
     return NextResponse.json({ success: true, data: articles });
   } catch (error: any) {
+    console.error('GET /api/articles error:', error); // Debug log
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
@@ -17,14 +18,34 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('POST /api/articles called'); // Debug log
     await dbConnect();
     const body = await request.json();
+    console.log('Request body:', body); // Debug log
+    
+    // Validate required fields
+    if (!body.title || !body.title.trim()) {
+      return NextResponse.json(
+        { success: false, error: 'Title is required' },
+        { status: 400 }
+      );
+    }
+    
+    if (!body.content || !body.content.trim()) {
+      return NextResponse.json(
+        { success: false, error: 'Content is required' },
+        { status: 400 }
+      );
+    }
+    
     const article = await Article.create(body);
+    console.log('Article created successfully:', article._id); // Debug log
     return NextResponse.json(
       { success: true, data: article },
       { status: 201 }
     );
   } catch (error: any) {
+    console.error('POST /api/articles error:', error); // Debug log
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 400 }

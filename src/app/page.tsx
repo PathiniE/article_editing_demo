@@ -34,8 +34,11 @@ export default function Home() {
     }
   };
 
+  // REPLACE THIS FUNCTION WITH THE DEBUG VERSION
   const handleSave = async (articleData: Partial<IArticle>) => {
     try {
+      console.log('Saving article data:', articleData); // Debug log
+      
       const url = editingArticle ? `/api/articles/${editingArticle._id}` : '/api/articles';
       const method = editingArticle ? 'PUT' : 'POST';
       
@@ -45,8 +48,12 @@ export default function Home() {
         body: JSON.stringify(articleData),
       });
 
+      console.log('Response status:', response.status); // Debug log
+      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        console.error('Error response:', errorData); // Debug log
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.error || 'Unknown error'}`);
       }
 
       const data = await response.json();
@@ -59,7 +66,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error saving article:', error);
-      alert('Failed to save article. Please try again.');
+      alert('Failed to save article. Please try again. Error: ' + error.message);
     }
   };
 
