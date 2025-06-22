@@ -54,7 +54,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
       <div className="mb-6">
         <Editor
-          apiKey="7j15ctc84od36f3vb4pypwtc4prqvid1toi4edg1x3xsu8xj"
+          apiKey=" "
           onInit={(evt, editor) => (editorRef.current = editor)}
           initialValue={content}
           init={{
