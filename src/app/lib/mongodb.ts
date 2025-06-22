@@ -8,10 +8,16 @@ if (!MONGODB_URI) {
 
 console.log('MongoDB URI exists:', !!MONGODB_URI);
 
-let cached = (global as any).mongoose;
+
+interface CachedConnection {
+  conn: typeof mongoose | null;
+  promise: Promise<typeof mongoose> | null;
+}
+
+let cached: CachedConnection = (global as Record<string, unknown>).mongoose as CachedConnection;
 
 if (!cached) {
-  cached = (global as any).mongoose = { conn: null, promise: null };
+  cached = (global as Record<string, unknown>).mongoose = { conn: null, promise: null };
 }
 
 async function dbConnect() {

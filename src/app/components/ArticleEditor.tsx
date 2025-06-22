@@ -14,7 +14,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [title, setTitle] = useState(article?.title || '');
   const [content, setContent] = useState(article?.content || '');
   const [isSaving, setIsSaving] = useState(false);
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<{ getContent: () => string } | null>(null);
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -55,12 +55,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       <div className="mb-6">
         <Editor
           apiKey="7j15ctc84od36f3vb4pypwtc4prqvid1toi4edg1x3xsu8xj"
-          onInit={(evt, editor) => editorRef.current = editor}
+          onInit={(evt, editor) => (editorRef.current = editor)}
           initialValue={content}
           init={{
             height: 500,
             menubar: false,
-            readonly: false,
             plugins: [
               'lists', 'link', 'searchreplace', 'visualblocks', 'fullscreen',
               'table', 'help', 'wordcount'

@@ -16,9 +16,10 @@ export async function GET(
       );
     }
     return NextResponse.json({ success: true, data: article });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: errorMessage },
       { status: 400 }
     );
   }
@@ -42,9 +43,10 @@ export async function PUT(
       );
     }
     return NextResponse.json({ success: true, data: article });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: errorMessage },
       { status: 400 }
     );
   }
@@ -64,9 +66,10 @@ export async function DELETE(
       );
     }
     return NextResponse.json({ success: true, data: {} });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: errorMessage },
       { status: 400 }
     );
   }

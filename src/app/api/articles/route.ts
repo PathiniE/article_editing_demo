@@ -7,10 +7,11 @@ export async function GET() {
     await dbConnect();
     const articles = await Article.find({}).sort({ updatedAt: -1 });
     return NextResponse.json({ success: true, data: articles });
-  } catch (error: any) {
-    console.error('GET /api/articles error:', error); // Debug log
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('GET /api/articles error:', error); 
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }
@@ -18,10 +19,10 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('POST /api/articles called'); // Debug log
+    console.log('POST /api/articles called'); 
     await dbConnect();
     const body = await request.json();
-    console.log('Request body:', body); // Debug log
+    console.log('Request body:', body); 
     
     // Validate required fields
     if (!body.title || !body.title.trim()) {
@@ -44,10 +45,11 @@ export async function POST(request: NextRequest) {
       { success: true, data: article },
       { status: 201 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     console.error('POST /api/articles error:', error); // Debug log
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: errorMessage },
       { status: 400 }
     );
   }
