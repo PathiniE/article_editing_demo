@@ -17,7 +17,8 @@ const ArticleView: React.FC<ArticleViewProps> = ({ article }) => {
       </div>
       
       <div 
-        className="prose max-w-none"
+        className="prose max-w-none prose-gray text-black"
+         
         dangerouslySetInnerHTML={{ __html: article.content }}
       />
     </div>
