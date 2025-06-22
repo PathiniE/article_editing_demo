@@ -22,11 +22,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       return;
     }
 
-    console.log('Editor content before save:', content); // Debug log
-    console.log('Title before save:', title); // Debug log
+    // Get content directly from the editor to ensure we have the latest content
+    const currentContent = editorRef.current ? editorRef.current.getContent() : content;
     
+    console.log('Editor content before save:', currentContent); // Debug log
+    console.log('Title before save:', title); // Debug log
+        
     // Check if content is empty or just contains empty HTML tags
-    const contentText = content.replace(/<[^>]*>/g, '').trim();
+    const contentText = currentContent.replace(/<[^>]*>/g, '').trim();
     if (!contentText) {
       alert('Please enter some content');
       return;
@@ -34,10 +37,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
     setIsSaving(true);
     try {
-      await onSave({ title: title.trim(), content });
+      await onSave({ title: title.trim(), content: currentContent });
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleEditorChange = (newContent: string) => {
+    setContent(newContent);
   };
 
   return (
@@ -55,8 +62,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       <div className="mb-6">
         <Editor
           apiKey=" "
-          onInit={(evt, editor) => (editorRef.current = editor)}
-          initialValue={content}
+          onInit={(evt, editor) => {
+            editorRef.current = editor;
+          }}
+          value={content}
           init={{
             height: 500,
             menubar: false,
@@ -71,7 +80,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:16px }',
             branding: false
           }}
-          onEditorChange={(content) => setContent(content)}
+          onEditorChange={handleEditorChange}
         />
       </div>
 
