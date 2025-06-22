@@ -10,11 +10,109 @@ interface ArticleEditorProps {
   onCancel: () => void;
 }
 
+interface TinyMCEEditor {
+  getContent: () => string;
+  insertContent: (content: string) => void;
+  selection: {
+    getNode: () => HTMLElement;
+    select: (element: HTMLElement) => void;
+  };
+  dom: {
+    remove: (element: HTMLElement) => void;
+    setAttribs: (element: HTMLElement, attrs: Record<string, string | null>) => void;
+    setStyle: (element: HTMLElement, property: string, value: string) => void;
+    select: (selector: string) => HTMLElement[];
+    removeClass: (element: HTMLElement, className: string) => void;
+    addClass: (element: HTMLElement, className: string) => void;
+  };
+  fire: (event: string) => void;
+  execCommand: (command: string) => void;
+  ui: {
+    registry: {
+      addButton: (name: string, config: ButtonConfig) => void;
+      addContextMenu: (name: string, config: ContextMenuConfig) => void;
+    };
+  };
+  windowManager: {
+    open: (config: WindowConfig) => WindowAPI;
+    close: () => void;
+  };
+  on: (event: string, callback: (e: TinyMCEEvent) => void) => void;
+}
+
+interface ButtonConfig {
+  icon: string;
+  tooltip: string;
+  onAction: () => void;
+}
+
+interface ContextMenuConfig {
+  update: (element: Element) => MenuItem[];
+}
+
+interface MenuItem {
+  type: 'menuitem' | 'separator';
+  text?: string;
+  icon?: string;
+  onAction?: () => void;
+}
+
+interface WindowConfig {
+  title: string;
+  size: 'small' | 'medium' | 'large';
+  body: {
+    type: 'panel';
+    items: FormItem[];
+  };
+  buttons: ButtonItem[];
+  initialData?: Record<string, string>;
+  onAction?: (api: WindowAPI, details: { name: string }) => void;
+  onSubmit?: (api: WindowAPI) => void;
+}
+
+interface FormItem {
+  type: 'input' | 'grid' | 'selectbox' | 'htmlpanel';
+  name?: string;
+  label?: string;
+  placeholder?: string;
+  columns?: number;
+  items?: FormItem[] | SelectboxItem[];
+  html?: string;
+}
+
+interface SelectboxItem {
+  text: string;
+  value: string;
+}
+
+interface ButtonItem {
+  type: 'custom' | 'cancel' | 'submit';
+  text: string;
+  name?: string;
+  primary?: boolean;
+}
+
+interface WindowAPI {
+  getData: () => Record<string, string>;
+  close: () => void;
+}
+
+interface TinyMCEEvent {
+  target: HTMLElement;
+  element: HTMLElement;
+  keyCode: number;
+  preventDefault: () => void;
+}
+
+interface BlobInfo {
+  blob: () => Blob;
+}
+
 const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel }) => {
   const [title, setTitle] = useState(article?.title || '');
   const [content, setContent] = useState(article?.content || '');
   const [isSaving, setIsSaving] = useState(false);
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<TinyMCEEditor | null>(null);
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -48,7 +146,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   };
 
   // Custom image upload handler
-  const handleImageUpload = (blobInfo: any, progress: (percent: number) => void): Promise<string> => {
+  const handleImageUpload = (blobInfo: BlobInfo): Promise<string> => {
     return new Promise((resolve, reject) => {
       // For demo purposes, we'll create a data URL from the blob
       // In production, you'd upload to your server or cloud storage
@@ -79,7 +177,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         <Editor
           apiKey=" "
           onInit={(evt, editor) => {
-            editorRef.current = editor;
+            editorRef.current = editor as TinyMCEEditor;
           }}
           value={content}
           init={{
@@ -152,7 +250,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             
             // File picker for images
             file_picker_types: 'image',
-            file_picker_callback: (callback: any, value: any, meta: any) => {
+            file_picker_callback: (callback: (url: string, meta: { alt: string }) => void, value: string, meta: { filetype: string }) => {
               if (meta.filetype === 'image') {
                 const input = document.createElement('input');
                 input.setAttribute('type', 'file');
@@ -178,7 +276,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             },
             
             // Setup for handling image deletion and enhanced functionality
-            setup: (editor) => {
+            setup: (editor: TinyMCEEditor) => {
               // Add custom button for image deletion in toolbar
               editor.ui.registry.addButton('deleteimage', {
                 icon: 'remove',
@@ -256,23 +354,23 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                             { text: 'Left', value: 'left' },
                             { text: 'Center', value: 'center' },
                             { text: 'Right', value: 'right' }
-                          ]
+                          ] as SelectboxItem[]
                         }
                       ]
                     },
                     buttons: [
                       ...(isImage ? [{
-                        type: 'custom',
+                        type: 'custom' as const,
                         text: 'Delete Image',
                         name: 'delete',
                         primary: false
                       }] : []),
                       {
-                        type: 'cancel',
+                        type: 'cancel' as const,
                         text: 'Cancel'
                       },
                       {
-                        type: 'submit',
+                        type: 'submit' as const,
                         text: isImage ? 'Update Image' : 'Insert Image',
                         primary: true
                       }
@@ -284,7 +382,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                       height: (selectedNode as HTMLImageElement).height?.toString() || '',
                       align: (selectedNode as HTMLImageElement).style.float || (selectedNode as HTMLImageElement).getAttribute('align') || ''
                     } : {},
-                    onAction: (api: any, details: any) => {
+                    onAction: (api: WindowAPI, details: { name: string }) => {
                       if (details.name === 'delete' && selectedNode) {
                         if (confirm('Are you sure you want to delete this image?')) {
                           editor.dom.remove(selectedNode);
@@ -296,7 +394,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                         }
                       }
                     },
-                    onSubmit: (api: any) => {
+                    onSubmit: (api: WindowAPI) => {
                       const data = api.getData();
                       
                       if (!data.src) {
@@ -360,7 +458,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                         text: 'Edit Image Properties',
                         icon: 'image',
                         onAction: () => {
-                          editor.selection.select(element);
+                          editor.selection.select(element as HTMLElement);
                           editor.execCommand('customimage');
                         }
                       },
@@ -373,7 +471,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                         icon: 'remove',
                         onAction: () => {
                           if (confirm('Are you sure you want to delete this image?')) {
-                            editor.dom.remove(element);
+                            editor.dom.remove(element as HTMLElement);
                             editor.fire('change');
                             editor.fire('input');
                             const newContent = editor.getContent();
@@ -389,7 +487,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                         text: 'Copy Image',
                         icon: 'copy',
                         onAction: () => {
-                          editor.selection.select(element);
+                          editor.selection.select(element as HTMLElement);
                           editor.execCommand('copy');
                         }
                       }
@@ -400,7 +498,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               });
 
               // Handle double-click on images to open custom properties
-              editor.on('dblclick', (e: any) => {
+              editor.on('dblclick', (e: TinyMCEEvent) => {
                 if (e.target && e.target.tagName === 'IMG') {
                   editor.selection.select(e.target);
                   // Show a quick action menu for double-click
@@ -448,7 +546,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                         text: 'Close'
                       }
                     ],
-                    onSubmit: (api: any) => {
+                    onSubmit: (api: WindowAPI) => {
                       api.close();
                     }
                   });
@@ -486,10 +584,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               });
 
               // Add visual feedback when image is selected
-              editor.on('NodeChange', (e: any) => {
+              editor.on('NodeChange', (e: TinyMCEEvent) => {
                 // Remove selection class from all images first
                 const allImages = editor.dom.select('img');
-                allImages.forEach((img: Element) => {
+                allImages.forEach((img: HTMLElement) => {
                   editor.dom.removeClass(img, 'mce-img-selected');
                 });
                 
@@ -500,7 +598,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               });
 
               // Handle keyboard delete for images
-              editor.on('keydown', (e: any) => {
+              editor.on('keydown', (e: TinyMCEEvent) => {
                 if (e.keyCode === 46 || e.keyCode === 8) { // Delete or Backspace
                   const selectedNode = editor.selection.getNode();
                   if (selectedNode && selectedNode.tagName === 'IMG') {
