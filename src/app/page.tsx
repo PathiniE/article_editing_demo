@@ -66,7 +66,8 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error saving article:', error);
-      alert('Failed to save article. Please try again. Error: ' + error.message);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert('Failed to save article. Please try again. Error: ' + errorMessage);
     }
   };
 
