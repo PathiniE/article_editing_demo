@@ -18,9 +18,14 @@ export default function Home() {
   const fetchArticles = async () => {
     try {
       const response = await fetch('/api/articles');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       if (data.success) {
         setArticles(data.data);
+      } else {
+        console.error('API Error:', data.error);
       }
     } catch (error) {
       console.error('Error fetching articles:', error);
@@ -40,14 +45,21 @@ export default function Home() {
         body: JSON.stringify(articleData),
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
       if (data.success) {
         fetchArticles();
         setShowEditor(false);
         setEditingArticle(null);
+      } else {
+        alert('Error saving article: ' + data.error);
       }
     } catch (error) {
       console.error('Error saving article:', error);
+      alert('Failed to save article. Please try again.');
     }
   };
 
@@ -60,12 +72,18 @@ export default function Home() {
     if (confirm('Are you sure you want to delete this article?')) {
       try {
         const response = await fetch(`/api/articles/${id}`, { method: 'DELETE' });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
         if (data.success) {
           fetchArticles();
+        } else {
+          alert('Error deleting article: ' + data.error);
         }
       } catch (error) {
         console.error('Error deleting article:', error);
+        alert('Failed to delete article. Please try again.');
       }
     }
   };

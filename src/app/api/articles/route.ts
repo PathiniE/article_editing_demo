@@ -3,23 +3,21 @@ import dbConnect from '../../lib/mongodb';
 import Article from '../../lib/models/Article';
 
 export async function GET() {
-  await dbConnect();
-
   try {
+    await dbConnect();
     const articles = await Article.find({}).sort({ updatedAt: -1 });
     return NextResponse.json({ success: true, data: articles });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },
-      { status: 400 }
+      { status: 500 }
     );
   }
 }
 
 export async function POST(request: NextRequest) {
-  await dbConnect();
-
   try {
+    await dbConnect();
     const body = await request.json();
     const article = await Article.create(body);
     return NextResponse.json(

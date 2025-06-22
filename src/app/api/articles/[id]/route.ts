@@ -6,9 +6,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  await dbConnect();
-
   try {
+    await dbConnect();
     const article = await Article.findById(params.id);
     if (!article) {
       return NextResponse.json(
@@ -29,9 +28,8 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  await dbConnect();
-
   try {
+    await dbConnect();
     const body = await request.json();
     const article = await Article.findByIdAndUpdate(params.id, body, {
       new: true,
@@ -56,9 +54,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  await dbConnect();
-
   try {
+    await dbConnect();
     const deletedArticle = await Article.deleteOne({ _id: params.id });
     if (!deletedArticle.deletedCount) {
       return NextResponse.json(

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Editor } from '@tinymce/tinymce-react';
 import { IArticle } from '../lib/models/Article';
 
@@ -44,22 +44,23 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
       <div className="mb-6">
         <Editor
-          apiKey={process.env.NEXT_PUBLIC_TINYMCE_API_KEY}
+          apiKey="no-api-key"
           onInit={(evt, editor) => editorRef.current = editor}
           initialValue={content}
           init={{
             height: 500,
             menubar: false,
+            readonly: false,
             plugins: [
-              'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
-              'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
-              'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount'
+              'lists', 'link', 'searchreplace', 'visualblocks', 'fullscreen',
+              'table', 'help', 'wordcount'
             ],
             toolbar: 'undo redo | blocks | ' +
-              'bold italic forecolor | alignleft aligncenter ' +
-              'alignright alignjustify | bullist numlist outdent indent | ' +
+              'bold italic | alignleft aligncenter ' +
+              'alignright alignjustify | bullist numlist | ' +
               'removeformat | help',
-            content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:16px }'
+            content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:16px }',
+            branding: false
           }}
           onEditorChange={(content) => setContent(content)}
         />
