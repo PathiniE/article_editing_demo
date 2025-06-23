@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Editor } from '@tinymce/tinymce-react';
 import { IArticle } from '../lib/models/Article';
 
@@ -12,6 +12,7 @@ interface ArticleEditorProps {
 
 interface TinyMCEEditor {
   getContent: () => string;
+  setContent: (content: string) => void;
   insertContent: (content: string) => void;
   selection: {
     getNode: () => HTMLElement;
@@ -38,6 +39,7 @@ interface TinyMCEEditor {
     close: () => void;
   };
   on: (event: string, callback: (e: TinyMCEEvent) => void) => void;
+  off: (event: string, callback: (e: TinyMCEEvent) => void) => void;
 }
 
 interface ButtonConfig {
@@ -106,6 +108,7 @@ interface TinyMCEEvent {
 
 interface BlobInfo {
   blob: () => Blob;
+  filename: () => string;
 }
 
 const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel }) => {
@@ -113,6 +116,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [content, setContent] = useState(article?.content || '');
   const [isSaving, setIsSaving] = useState(false);
   const editorRef = useRef<TinyMCEEditor | null>(null);
+  
+  // Prevent content sync issues
+  const isInitializing = useRef(true);
+  const lastEditorContent = useRef(content);
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -141,25 +148,61 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
   };
 
-  const handleEditorChange = (newContent: string) => {
-    setContent(newContent);
-  };
-
-  // Custom image upload handler
-  const handleImageUpload = (blobInfo: BlobInfo): Promise<string> => {
+  // Simplified image upload handler that forces immediate display
+  const handleImageUpload = useCallback((blobInfo: BlobInfo): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // For demo purposes, we'll create a data URL from the blob
-      // In production, you'd upload to your server or cloud storage
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve(reader.result as string);
-      };
-      reader.onerror = () => {
-        reject('Failed to read file');
-      };
-      reader.readAsDataURL(blobInfo.blob());
+      try {
+        const file = blobInfo.blob();
+        const filename = blobInfo.filename();
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          reject('Please select a valid image file');
+          return;
+        }
+        
+        // Validate file size (max 10MB for better compatibility)
+        const maxSize = 10 * 1024 * 1024;
+        if (file.size > maxSize) {
+          reject('Image size must be less than 10MB');
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          console.log('Image converted to data URL, length:', dataUrl.length);
+          
+          // Force immediate resolve to ensure TinyMCE gets the URL right away
+          setTimeout(() => {
+            resolve(dataUrl);
+          }, 0);
+        };
+        reader.onerror = () => {
+          console.error('Failed to read file:', filename);
+          reject('Failed to read image file');
+        };
+        reader.readAsDataURL(file);
+      } catch (error) {
+        console.error('Image upload error:', error);
+        reject('Failed to upload image');
+      }
     });
-  };
+  }, []);
+
+  // Minimal content change handler to prevent flickering
+  const handleEditorChange = useCallback((newContent: string) => {
+    // Prevent unnecessary updates during initialization
+    if (isInitializing.current) {
+      return;
+    }
+    
+    // Only update if content genuinely changed
+    if (newContent !== lastEditorContent.current) {
+      lastEditorContent.current = newContent;
+      setContent(newContent);
+    }
+  }, []);
 
   return (
     <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg">
@@ -178,27 +221,45 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           apiKey=" "
           onInit={(evt, editor) => {
             editorRef.current = editor as TinyMCEEditor;
+            console.log('TinyMCE Editor initialized');
+            // Mark initialization as complete after a short delay
+            setTimeout(() => {
+              isInitializing.current = false;
+            }, 500);
           }}
           value={content}
           init={{
             height: 600,
             menubar: 'file edit view insert format tools table help',
+            // SOLUTION 1: Remove 'paste' from plugins array
             plugins: [
               'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
               'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
               'insertdatetime', 'media', 'table', 'wordcount', 'help'
+              // Removed 'paste' plugin - TinyMCE has built-in paste functionality
             ],
+            
+            // SOLUTION 2: Alternative - Use CDN for plugins (uncomment if you need paste plugin)
+            // external_plugins: {
+            //   'paste': 'https://cdn.tiny.cloud/1/no-api-key/tinymce/6/plugins/paste/plugin.min.js'
+            // },
+            
+            // SOLUTION 3: Disable plugin loading entirely (uncomment if needed)
+            // plugins: false,
+            
             toolbar: 'undo redo | blocks | ' +
               'bold italic backcolor | alignleft aligncenter ' +
               'alignright alignjustify | bullist numlist outdent indent | ' +
               'removeformat | help | ' +
-              'customimage deleteimage | table tabledelete | tableprops tablerowprops tablecellprops | ' +
+              'image | table tabledelete | tableprops tablerowprops tablecellprops | ' +
               'tableinsertrowbefore tableinsertrowafter tabledeleterow | ' +
               'tableinsertcolbefore tableinsertcolafter tabledeletecol',
             content_style: `
               body { 
                 font-family: Helvetica, Arial, sans-serif; 
                 font-size: 16px;
+                line-height: 1.6;
+                padding: 10px;
               }
               table {
                 border-collapse: collapse;
@@ -216,20 +277,40 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               img {
                 max-width: 100%;
                 height: auto;
-                margin: 1em 0;
+                margin: 10px 0;
+                display: block;
+                border-radius: 4px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
               }
-              .mce-img-selected {
-                outline: 2px solid #0066cc !important;
+              .mce-content-body img[data-mce-selected] {
+                outline: 3px solid #0066cc !important;
                 outline-offset: 2px;
               }
             `,
             branding: false,
             
-            // Image configuration
+            // Optimized image configuration for immediate display
             image_advtab: true,
             image_uploadtab: true,
             images_upload_handler: handleImageUpload,
-            images_reuse_filename: true,
+            images_reuse_filename: false,
+            automatic_uploads: true,
+            images_file_types: 'jpg,jpeg,png,gif,webp,svg,bmp',
+            
+            // Force immediate image processing
+            images_upload_base_path: '',
+            convert_urls: false,
+            
+            // Enhanced paste configuration - these work without the paste plugin
+            paste_data_images: true,
+            paste_as_text: false,
+            paste_webkit_styles: 'color font-size',
+            paste_retain_style_properties: 'color font-size font-family',
+            paste_remove_styles_if_webkit: false,
+            
+            // Performance optimizations
+            skin: 'oxide',
+            content_css: false,
             
             // Table configuration
             table_default_attributes: {
@@ -239,13 +320,8 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               'border-collapse': 'collapse',
               'width': '100%'
             },
-            table_class_list: [
-              { title: 'Default', value: '' },
-              { title: 'Striped', value: 'table-striped' },
-              { title: 'Bordered', value: 'table-bordered' }
-            ],
             
-            // Context menu configuration - using built-in context menu
+            // Context menu
             contextmenu: 'link image table',
             
             // File picker for images
@@ -261,10 +337,24 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                   const file = target.files?.[0];
                   
                   if (file) {
+                    // Validate file
+                    if (!file.type.startsWith('image/')) {
+                      alert('Please select a valid image file');
+                      return;
+                    }
+                    
+                    const maxSize = 10 * 1024 * 1024; // 10MB
+                    if (file.size > maxSize) {
+                      alert('Image size must be less than 10MB');
+                      return;
+                    }
+                    
                     const reader = new FileReader();
                     reader.addEventListener('load', () => {
-                      callback(reader.result as string, {
-                        alt: file.name
+                      const dataUrl = reader.result as string;
+                      console.log('File picker image loaded:', file.name);
+                      callback(dataUrl, {
+                        alt: file.name.replace(/\.[^/.]+$/, "")
                       });
                     });
                     reader.readAsDataURL(file);
@@ -275,349 +365,60 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               }
             },
             
-            // Setup for handling image deletion and enhanced functionality
+            // Setup function with minimal event handling
             setup: (editor: TinyMCEEditor) => {
-              // Add custom button for image deletion in toolbar
-              editor.ui.registry.addButton('deleteimage', {
-                icon: 'remove',
-                tooltip: 'Delete selected image',
-                onAction: () => {
-                  const selectedNode = editor.selection.getNode();
-                  console.log('Delete button clicked, selected node:', selectedNode);
-                  
-                  if (selectedNode && selectedNode.tagName === 'IMG') {
-                    if (confirm('Are you sure you want to delete this image?')) {
-                      // Use editor.dom.remove for proper deletion
-                      editor.dom.remove(selectedNode);
-                      // Trigger content change event
-                      editor.fire('change');
-                      editor.fire('input');
-                      // Update the content state
-                      const newContent = editor.getContent();
-                      setContent(newContent);
-                      console.log('Image deleted, new content:', newContent);
-                    }
-                  } else {
-                    alert('Please select an image to delete');
-                  }
-                }
+              console.log('Setting up TinyMCE editor');
+
+              // Handle image loading to ensure visibility
+              editor.on('LoadContent', () => {
+                console.log('Content loaded in editor');
               });
 
-              // Custom image dialog with delete option
-              editor.ui.registry.addButton('customimage', {
-                icon: 'image',
-                tooltip: 'Insert/edit image',
-                onAction: () => {
-                  const selectedNode = editor.selection.getNode();
-                  const isImage = selectedNode && selectedNode.tagName === 'IMG';
-                  
-                  editor.windowManager.open({
-                    title: isImage ? 'Edit Image' : 'Insert Image',
-                    size: 'large',
-                    body: {
-                      type: 'panel',
-                      items: [
-                        {
-                          type: 'input',
-                          name: 'src',
-                          label: 'Source',
-                          placeholder: 'Image URL or select file...'
-                        },
-                        {
-                          type: 'input',
-                          name: 'alt',
-                          label: 'Alternative description',
-                          placeholder: 'Describe the image...'
-                        },
-                        {
-                          type: 'grid',
-                          columns: 2,
-                          items: [
-                            {
-                              type: 'input',
-                              name: 'width',
-                              label: 'Width'
-                            },
-                            {
-                              type: 'input',
-                              name: 'height',
-                              label: 'Height'
-                            }
-                          ]
-                        },
-                        {
-                          type: 'selectbox',
-                          name: 'align',
-                          label: 'Alignment',
-                          items: [
-                            { text: 'None', value: '' },
-                            { text: 'Left', value: 'left' },
-                            { text: 'Center', value: 'center' },
-                            { text: 'Right', value: 'right' }
-                          ] as SelectboxItem[]
-                        }
-                      ]
-                    },
-                    buttons: [
-                      ...(isImage ? [{
-                        type: 'custom' as const,
-                        text: 'Delete Image',
-                        name: 'delete',
-                        primary: false
-                      }] : []),
-                      {
-                        type: 'cancel' as const,
-                        text: 'Cancel'
-                      },
-                      {
-                        type: 'submit' as const,
-                        text: isImage ? 'Update Image' : 'Insert Image',
-                        primary: true
-                      }
-                    ],
-                    initialData: isImage ? {
-                      src: (selectedNode as HTMLImageElement).src || '',
-                      alt: (selectedNode as HTMLImageElement).alt || '',
-                      width: (selectedNode as HTMLImageElement).width?.toString() || '',
-                      height: (selectedNode as HTMLImageElement).height?.toString() || '',
-                      align: (selectedNode as HTMLImageElement).style.float || (selectedNode as HTMLImageElement).getAttribute('align') || ''
-                    } : {},
-                    onAction: (api: WindowAPI, details: { name: string }) => {
-                      if (details.name === 'delete' && selectedNode) {
-                        if (confirm('Are you sure you want to delete this image?')) {
-                          editor.dom.remove(selectedNode);
-                          editor.fire('change');
-                          editor.fire('input');
-                          const newContent = editor.getContent();
-                          setContent(newContent);
-                          api.close();
-                        }
-                      }
-                    },
-                    onSubmit: (api: WindowAPI) => {
-                      const data = api.getData();
-                      
-                      if (!data.src) {
-                        alert('Please provide an image source');
-                        return;
-                      }
-
-                      if (isImage && selectedNode) {
-                        // Update existing image
-                        editor.dom.setAttribs(selectedNode, {
-                          src: data.src,
-                          alt: data.alt,
-                          width: data.width || null,
-                          height: data.height || null
-                        });
-                        
-                        if (data.align) {
-                          if (data.align === 'center') {
-                            editor.dom.setStyle(selectedNode, 'float', 'none');
-                            editor.dom.setStyle(selectedNode, 'display', 'block');
-                            editor.dom.setStyle(selectedNode, 'margin', '0 auto');
-                          } else {
-                            editor.dom.setStyle(selectedNode, 'float', data.align);
-                            editor.dom.setStyle(selectedNode, 'display', '');
-                            editor.dom.setStyle(selectedNode, 'margin', '');
-                          }
-                        }
-                      } else {
-                        // Insert new image
-                        let imgHtml = `<img src="${data.src}" alt="${data.alt}"`;
-                        if (data.width) imgHtml += ` width="${data.width}"`;
-                        if (data.height) imgHtml += ` height="${data.height}"`;
-                        
-                        if (data.align && data.align !== 'center') {
-                          imgHtml += ` style="float: ${data.align};"`;
-                        } else if (data.align === 'center') {
-                          imgHtml += ` style="display: block; margin: 0 auto;"`;
-                        }
-                        
-                        imgHtml += '>';
-                        editor.insertContent(imgHtml);
-                      }
-                      
-                      editor.fire('change');
-                      editor.fire('input');
-                      const newContent = editor.getContent();
-                      setContent(newContent);
-                      api.close();
-                    }
-                  });
-                }
-              });
-
-              // Add context menu for right-click on images using modern approach
-              editor.ui.registry.addContextMenu('imageactions', {
-                update: (element: Element) => {
-                  if (element && element.tagName === 'IMG') {
-                    return [
-                      {
-                        type: 'menuitem',
-                        text: 'Edit Image Properties',
-                        icon: 'image',
-                        onAction: () => {
-                          editor.selection.select(element as HTMLElement);
-                          editor.execCommand('customimage');
-                        }
-                      },
-                      {
-                        type: 'separator'
-                      },
-                      {
-                        type: 'menuitem',
-                        text: 'Delete Image',
-                        icon: 'remove',
-                        onAction: () => {
-                          if (confirm('Are you sure you want to delete this image?')) {
-                            editor.dom.remove(element as HTMLElement);
-                            editor.fire('change');
-                            editor.fire('input');
-                            const newContent = editor.getContent();
-                            setContent(newContent);
-                          }
-                        }
-                      },
-                      {
-                        type: 'separator'
-                      },
-                      {
-                        type: 'menuitem',
-                        text: 'Copy Image',
-                        icon: 'copy',
-                        onAction: () => {
-                          editor.selection.select(element as HTMLElement);
-                          editor.execCommand('copy');
-                        }
-                      }
-                    ];
-                  }
-                  return [];
-                }
-              });
-
-              // Handle double-click on images to open custom properties
-              editor.on('dblclick', (e: TinyMCEEvent) => {
-                if (e.target && e.target.tagName === 'IMG') {
-                  editor.selection.select(e.target);
-                  // Show a quick action menu for double-click
-                  
-                  // Create a simple action menu
-                  editor.windowManager.open({
-                    title: 'Image Actions',
-                    size: 'small',
-                    body: {
-                      type: 'panel',
-                      items: [
-                        {
-                          type: 'htmlpanel',
-                          html: `
-                            <div style="text-align: center; padding: 10px;">
-                              <p style="margin-bottom: 15px;">What would you like to do with this image?</p>
-                              <div style="display: flex; gap: 10px; justify-content: center;">
-                                <button id="edit-image-btn" style="
-                                  padding: 8px 16px; 
-                                  background: #0066cc; 
-                                  color: white; 
-                                  border: none; 
-                                  border-radius: 4px; 
-                                  cursor: pointer;
-                                  font-size: 14px;
-                                ">Edit Properties</button>
-                                <button id="delete-image-btn" style="
-                                  padding: 8px 16px; 
-                                  background: #dc3545; 
-                                  color: white; 
-                                  border: none; 
-                                  border-radius: 4px; 
-                                  cursor: pointer;
-                                  font-size: 14px;
-                                ">Delete Image</button>
-                              </div>
-                            </div>
-                          `
-                        }
-                      ]
-                    },
-                    buttons: [
-                      {
-                        type: 'cancel',
-                        text: 'Close'
-                      }
-                    ],
-                    onSubmit: (api: WindowAPI) => {
-                      api.close();
-                    }
-                  });
-
-                  // Add event listeners after a short delay to ensure DOM is ready
-                  setTimeout(() => {
-                    const editBtn = document.getElementById('edit-image-btn');
-                    const deleteBtn = document.getElementById('delete-image-btn');
-                    
-                    if (editBtn) {
-                      editBtn.onclick = () => {
-                        editor.windowManager.close();
-                        setTimeout(() => {
-                          editor.execCommand('customimage');
-                        }, 100);
-                      };
-                    }
-                    
-                    if (deleteBtn) {
-                      deleteBtn.onclick = () => {
-                        editor.windowManager.close();
-                        setTimeout(() => {
-                          if (confirm('Are you sure you want to delete this image?')) {
-                            editor.dom.remove(e.target);
-                            editor.fire('change');
-                            editor.fire('input');
-                            const newContent = editor.getContent();
-                            setContent(newContent);
-                          }
-                        }, 100);
-                      };
-                    }
-                  }, 100);
-                }
-              });
-
-              // Add visual feedback when image is selected
+              // Handle image selection for better UX
               editor.on('NodeChange', (e: TinyMCEEvent) => {
-                // Remove selection class from all images first
-                const allImages = editor.dom.select('img');
-                allImages.forEach((img: HTMLElement) => {
-                  editor.dom.removeClass(img, 'mce-img-selected');
-                });
-                
-                // Add selection class to current image
                 if (e.element && e.element.tagName === 'IMG') {
-                  editor.dom.addClass(e.element, 'mce-img-selected');
+                  console.log('Image selected:', e.element.getAttribute('src')?.substring(0, 50) + '...');
                 }
               });
 
-              // Handle keyboard delete for images
-              editor.on('keydown', (e: TinyMCEEvent) => {
-                if (e.keyCode === 46 || e.keyCode === 8) { // Delete or Backspace
-                  const selectedNode = editor.selection.getNode();
-                  if (selectedNode && selectedNode.tagName === 'IMG') {
-                    e.preventDefault();
-                    if (confirm('Are you sure you want to delete this image?')) {
-                      editor.dom.remove(selectedNode);
-                      editor.fire('change');
-                      editor.fire('input');
-                      const newContent = editor.getContent();
+              // Only handle essential content changes to prevent flickering
+              let updateTimeout: NodeJS.Timeout;
+              editor.on('input', () => {
+                if (!isInitializing.current) {
+                  // Check for pasted images during content changes
+                  const images = editor.dom.select('img[src^="data:"]');
+                  if (images.length > 0) {
+                    console.log('Found images in content:', images.length);
+                    images.forEach((img, index) => {
+                      console.log(`Image ${index + 1} src length:`, img.getAttribute('src')?.length);
+                    });
+                  }
+                  
+                  clearTimeout(updateTimeout);
+                  updateTimeout = setTimeout(() => {
+                    const newContent = editor.getContent();
+                    if (newContent !== lastEditorContent.current) {
+                      lastEditorContent.current = newContent;
                       setContent(newContent);
                     }
+                  }, 300);
+                }
+              });
+
+              // Handle important changes immediately
+              editor.on('change', () => {
+                if (!isInitializing.current) {
+                  const newContent = editor.getContent();
+                  if (newContent !== lastEditorContent.current) {
+                    lastEditorContent.current = newContent;
+                    setContent(newContent);
                   }
                 }
               });
 
-              // Ensure content state is updated on any change
-              editor.on('change input undo redo', () => {
-                const newContent = editor.getContent();
-                setContent(newContent);
+              // Clean up
+              editor.on('remove', () => {
+                clearTimeout(updateTimeout);
               });
             }
           }}
@@ -629,7 +430,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSaving ? 'Saving...' : 'Save Article'}
         </button>
