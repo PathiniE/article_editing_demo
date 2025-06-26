@@ -8,6 +8,29 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// Define types for Cloudinary responses
+interface CloudinaryUploadResult {
+  secure_url: string;
+  public_id: string;
+  width: number;
+  height: number;
+  format: string;
+  bytes: number;
+}
+
+interface CloudinaryResource {
+  public_id: string;
+  secure_url: string;
+  width: number;
+  height: number;
+  created_at: string;
+  bytes: number;
+}
+
+interface CloudinaryApiResult {
+  resources: CloudinaryResource[];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const data = await request.formData();
@@ -43,37 +66,44 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
 
     // Create a promise to handle the Cloudinary upload
-    const uploadResponse = await new Promise((resolve, reject) => {
+    const uploadResponse = await new Promise<CloudinaryUploadResult>((resolve, reject) => {
       cloudinary.uploader.upload_stream(
         {
           resource_type: 'image',
-          folder: 'tinymce-uploads', 
+          folder: 'tinymce-uploads',
           transformation: [
-            { quality: 'auto', fetch_format: 'auto' }, 
-            { width: 1200, height: 1200, crop: 'limit' } 
+            { quality: 'auto', fetch_format: 'auto' },
+            { width: 1200, height: 1200, crop: 'limit' }
           ]
         },
         (error, result) => {
           if (error) {
             console.error('Cloudinary upload error:', error);
             reject(error);
+          } else if (result) {
+            resolve({
+              secure_url: result.secure_url,
+              public_id: result.public_id,
+              width: result.width,
+              height: result.height,
+              format: result.format,
+              bytes: result.bytes
+            });
           } else {
-            resolve(result);
+            reject(new Error('Upload failed - no result returned'));
           }
         }
       ).end(buffer);
     });
 
-    const result = uploadResponse as any;
-
     return NextResponse.json({
       success: true,
-      url: result.secure_url,
-      public_id: result.public_id,
-      width: result.width,
-      height: result.height,
-      format: result.format,
-      bytes: result.bytes
+      url: uploadResponse.secure_url,
+      public_id: uploadResponse.public_id,
+      width: uploadResponse.width,
+      height: uploadResponse.height,
+      format: uploadResponse.format,
+      bytes: uploadResponse.bytes
     });
 
   } catch (error: unknown) {
@@ -89,16 +119,17 @@ export async function POST(request: NextRequest) {
 // GET method to retrieve upload information
 export async function GET() {
   try {
-    // Get recent uploads from Cloudinary
-    const result = await cloudinary.search
-      .expression('folder:tinymce-uploads')
-      .sort_by([['created_at', 'desc']])
-      .max_results(30)
-      .execute();
+    // Get recent uploads from Cloudinary using Admin API
+    const result = await cloudinary.api.resources({
+      type: 'upload',
+      prefix: 'tinymce-uploads/',
+      max_results: 30,
+      resource_type: 'image'
+    }) as CloudinaryApiResult;
 
     return NextResponse.json({
       success: true,
-      images: result.resources.map((resource: any) => ({
+      images: result.resources.map((resource: CloudinaryResource) => ({
         public_id: resource.public_id,
         url: resource.secure_url,
         width: resource.width,
