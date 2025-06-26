@@ -155,10 +155,17 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
   };
 
-  // Upload image to Cloudinary
-  const uploadToCloudinary = async (file: File): Promise<string> => {
+  // Upload image to Cloudinary - now accepts both File and Blob
+  const uploadToCloudinary = async (file: File | Blob, filename?: string): Promise<string> => {
     const formData = new FormData();
-    formData.append('file', file);
+    
+    // If it's a Blob, convert it to a File-like object
+    if (file instanceof Blob && !(file instanceof File)) {
+      const fileFromBlob = new File([file], filename || 'image.png', { type: file.type });
+      formData.append('file', fileFromBlob);
+    } else {
+      formData.append('file', file);
+    }
 
     const response = await fetch('/api/cloudinary-upload', {
       method: 'POST',
@@ -182,18 +189,18 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const handleImageUpload = useCallback((blobInfo: BlobInfo): Promise<string> => {
     return new Promise(async (resolve, reject) => {
       try {
-        const file = blobInfo.blob();
+        const blob = blobInfo.blob();
         const filename = blobInfo.filename();
         
         // Validate file type
-        if (!file.type.startsWith('image/')) {
+        if (!blob.type.startsWith('image/')) {
           reject('Please select a valid image file');
           return;
         }
         
         // Validate file size (max 10MB)
         const maxSize = 10 * 1024 * 1024;
-        if (file.size > maxSize) {
+        if (blob.size > maxSize) {
           reject('Image size must be less than 10MB');
           return;
         }
@@ -203,8 +210,8 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
         console.log('Uploading image to Cloudinary:', filename);
         
-        // Upload to Cloudinary
-        const cloudinaryUrl = await uploadToCloudinary(file);
+        // Upload to Cloudinary - pass both blob and filename
+        const cloudinaryUrl = await uploadToCloudinary(blob, filename);
         
         console.log('Image uploaded successfully:', cloudinaryUrl);
         
@@ -475,7 +482,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                 }
               });
 
-              // Clean up
+              
               editor.on('remove', () => {
                 clearTimeout(updateTimeout);
               });
