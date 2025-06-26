@@ -115,6 +115,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [title, setTitle] = useState(article?.title || '');
   const [content, setContent] = useState(article?.content || '');
   const [isSaving, setIsSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState<Set<string>>(new Set());
   const editorRef = useRef<TinyMCEEditor | null>(null);
   
   // Prevent content sync issues
@@ -140,6 +141,12 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       return;
     }
 
+    // Check if any images are still uploading
+    if (uploadingImages.size > 0) {
+      alert('Please wait for all images to finish uploading');
+      return;
+    }
+
     setIsSaving(true);
     try {
       await onSave({ title: title.trim(), content: currentContent });
@@ -148,9 +155,32 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
   };
 
-  // Simplified image upload handler that forces immediate display
+  // Upload image to Cloudinary
+  const uploadToCloudinary = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/cloudinary-upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Upload failed');
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Upload failed');
+    }
+
+    return data.url;
+  };
+
+  // Enhanced image upload handler with Cloudinary
   const handleImageUpload = useCallback((blobInfo: BlobInfo): Promise<string> => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         const file = blobInfo.blob();
         const filename = blobInfo.filename();
@@ -161,31 +191,43 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           return;
         }
         
-        // Validate file size (max 10MB for better compatibility)
+        // Validate file size (max 10MB)
         const maxSize = 10 * 1024 * 1024;
         if (file.size > maxSize) {
           reject('Image size must be less than 10MB');
           return;
         }
 
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          console.log('Image converted to data URL, length:', dataUrl.length);
-          
-          // Force immediate resolve to ensure TinyMCE gets the URL right away
-          setTimeout(() => {
-            resolve(dataUrl);
-          }, 0);
-        };
-        reader.onerror = () => {
-          console.error('Failed to read file:', filename);
-          reject('Failed to read image file');
-        };
-        reader.readAsDataURL(file);
+        // Add to uploading set
+        setUploadingImages(prev => new Set(prev).add(filename));
+
+        console.log('Uploading image to Cloudinary:', filename);
+        
+        // Upload to Cloudinary
+        const cloudinaryUrl = await uploadToCloudinary(file);
+        
+        console.log('Image uploaded successfully:', cloudinaryUrl);
+        
+        // Remove from uploading set
+        setUploadingImages(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(filename);
+          return newSet;
+        });
+        
+        resolve(cloudinaryUrl);
       } catch (error) {
         console.error('Image upload error:', error);
-        reject('Failed to upload image');
+        
+        // Remove from uploading set on error
+        setUploadingImages(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(blobInfo.filename());
+          return newSet;
+        });
+        
+        const errorMessage = error instanceof Error ? error.message : 'Failed to upload image';
+        reject(errorMessage);
       }
     });
   }, []);
@@ -216,6 +258,18 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         />
       </div>
 
+      {/* Upload Status Indicator */}
+      {uploadingImages.size > 0 && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+            <span className="text-blue-700">
+              Uploading {uploadingImages.size} image{uploadingImages.size > 1 ? 's' : ''}...
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <Editor
           apiKey=" "
@@ -231,21 +285,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           init={{
             height: 600,
             menubar: 'file edit view insert format tools table help',
-            // SOLUTION 1: Remove 'paste' from plugins array
             plugins: [
               'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
               'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
               'insertdatetime', 'media', 'table', 'wordcount', 'help'
-              // Removed 'paste' plugin - TinyMCE has built-in paste functionality
             ],
-            
-            // SOLUTION 2: Alternative - Use CDN for plugins (uncomment if you need paste plugin)
-            // external_plugins: {
-            //   'paste': 'https://cdn.tiny.cloud/1/no-api-key/tinymce/6/plugins/paste/plugin.min.js'
-            // },
-            
-            // SOLUTION 3: Disable plugin loading entirely (uncomment if needed)
-            // plugins: false,
             
             toolbar: 'undo redo | blocks | ' +
               'bold italic backcolor | alignleft aligncenter ' +
@@ -289,7 +333,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             `,
             branding: false,
             
-            // Optimized image configuration for immediate display
+            // Enhanced image configuration for Cloudinary
             image_advtab: true,
             image_uploadtab: true,
             images_upload_handler: handleImageUpload,
@@ -297,11 +341,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             automatic_uploads: true,
             images_file_types: 'jpg,jpeg,png,gif,webp,svg,bmp',
             
-            // Force immediate image processing
+            // Cloudinary optimization
             images_upload_base_path: '',
             convert_urls: false,
             
-            // Enhanced paste configuration - these work without the paste plugin
+            // Enhanced paste configuration
             paste_data_images: true,
             paste_as_text: false,
             paste_webkit_styles: 'color font-size',
@@ -324,7 +368,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             // Context menu
             contextmenu: 'link image table',
             
-            // File picker for images
+            // File picker for images with Cloudinary upload
             file_picker_types: 'image',
             file_picker_callback: (callback: (url: string, meta: { alt: string }) => void, value: string, meta: { filetype: string }) => {
               if (meta.filetype === 'image') {
@@ -332,32 +376,53 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                 input.setAttribute('type', 'file');
                 input.setAttribute('accept', 'image/*');
                 
-                input.addEventListener('change', (e: Event) => {
+                input.addEventListener('change', async (e: Event) => {
                   const target = e.target as HTMLInputElement;
                   const file = target.files?.[0];
                   
                   if (file) {
-                    // Validate file
-                    if (!file.type.startsWith('image/')) {
-                      alert('Please select a valid image file');
-                      return;
-                    }
-                    
-                    const maxSize = 10 * 1024 * 1024; // 10MB
-                    if (file.size > maxSize) {
-                      alert('Image size must be less than 10MB');
-                      return;
-                    }
-                    
-                    const reader = new FileReader();
-                    reader.addEventListener('load', () => {
-                      const dataUrl = reader.result as string;
-                      console.log('File picker image loaded:', file.name);
-                      callback(dataUrl, {
+                    try {
+                      // Validate file
+                      if (!file.type.startsWith('image/')) {
+                        alert('Please select a valid image file');
+                        return;
+                      }
+                      
+                      const maxSize = 10 * 1024 * 1024; // 10MB
+                      if (file.size > maxSize) {
+                        alert('Image size must be less than 10MB');
+                        return;
+                      }
+                      
+                      // Add to uploading set
+                      setUploadingImages(prev => new Set(prev).add(file.name));
+                      
+                      // Upload to Cloudinary
+                      const cloudinaryUrl = await uploadToCloudinary(file);
+                      
+                      // Remove from uploading set
+                      setUploadingImages(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(file.name);
+                        return newSet;
+                      });
+                      
+                      console.log('File picker image uploaded:', cloudinaryUrl);
+                      callback(cloudinaryUrl, {
                         alt: file.name.replace(/\.[^/.]+$/, "")
                       });
-                    });
-                    reader.readAsDataURL(file);
+                    } catch (error) {
+                      // Remove from uploading set on error
+                      setUploadingImages(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(file.name);
+                        return newSet;
+                      });
+                      
+                      console.error('File picker upload error:', error);
+                      const errorMessage = error instanceof Error ? error.message : 'Failed to upload image';
+                      alert('Upload failed: ' + errorMessage);
+                    }
                   }
                 });
                 
@@ -377,7 +442,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               // Handle image selection for better UX
               editor.on('NodeChange', (e: TinyMCEEvent) => {
                 if (e.element && e.element.tagName === 'IMG') {
-                  console.log('Image selected:', e.element.getAttribute('src')?.substring(0, 50) + '...');
+                  const src = e.element.getAttribute('src');
+                  if (src?.includes('cloudinary.com')) {
+                    console.log('Cloudinary image selected:', src.substring(0, 50) + '...');
+                  }
                 }
               });
 
@@ -385,15 +453,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               let updateTimeout: NodeJS.Timeout;
               editor.on('input', () => {
                 if (!isInitializing.current) {
-                  // Check for pasted images during content changes
-                  const images = editor.dom.select('img[src^="data:"]');
-                  if (images.length > 0) {
-                    console.log('Found images in content:', images.length);
-                    images.forEach((img, index) => {
-                      console.log(`Image ${index + 1} src length:`, img.getAttribute('src')?.length);
-                    });
-                  }
-                  
                   clearTimeout(updateTimeout);
                   updateTimeout = setTimeout(() => {
                     const newContent = editor.getContent();
@@ -429,10 +488,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       <div className="flex gap-4">
         <button
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || uploadingImages.size > 0}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isSaving ? 'Saving...' : 'Save Article'}
+          {isSaving ? 'Saving...' : uploadingImages.size > 0 ? 'Uploading Images...' : 'Save Article'}
         </button>
         <button
           onClick={onCancel}
